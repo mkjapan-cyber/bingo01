@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>OCR対応ビンゴチェッカー</title>
+  <title>改良版OCRビンゴチェッカー</title>
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@v4.0.2/dist/tesseract.min.js"></script>
   <style>
     body { font-family: sans-serif; padding: 1em; }
@@ -16,13 +16,13 @@
 </head>
 <body>
 
-<h1>OCR対応ビンゴチェッカー</h1>
+<h1>OCR対応ビンゴチェッカー（改良版）</h1>
 
-<h3>1. カード画像をアップロード（数字が5行に並ぶように撮影）</h3>
-<input type="file" accept="image/*" capture="environment" onchange="runOCR(this)" />
+<h3>1. カード画像をアップロード</h3>
+<input type="file" accept="image/*" capture="environment" id="imageInput" />
 <p id="ocrStatus">読み込み待機中</p>
 
-<h3>2. ビンゴカードの自動入力（中央はFREEマス）</h3>
+<h3>2. ビンゴカードの自動入力（中央FREE）</h3>
 <table id="bingoTable"><tbody></tbody></table>
 
 <h3>3. 当選番号をカンマ区切りで入力</h3>
@@ -33,7 +33,7 @@
 <script>
   const tableBody = document.querySelector("#bingoTable tbody");
 
-  // ビンゴマスの入力欄を作成
+  // ビンゴ入力欄を作成
   for (let row = 0; row < 5; row++) {
     const tr = document.createElement("tr");
     for (let col = 0; col < 5; col++) {
@@ -54,6 +54,10 @@
     tableBody.appendChild(tr);
   }
 
+  document.getElementById("imageInput").addEventListener("change", function () {
+    runOCR(this);
+  });
+
   function checkBingo() {
     const drawnText = document.getElementById("drawnNumbers").value;
     const drawnSet = new Set(
@@ -71,18 +75,12 @@
     }
 
     let bingoCount = 0;
-
-    // 横
     for (let r = 0; r < 5; r++) {
       if (card[r].every(n => n === "FREE" || drawnSet.has(n))) bingoCount++;
     }
-
-    // 縦
     for (let c = 0; c < 5; c++) {
       if ([0,1,2,3,4].every(r => card[r][c] === "FREE" || drawnSet.has(card[r][c]))) bingoCount++;
     }
-
-    // 斜め
     if ([0,1,2,3,4].every(i => card[i][i] === "FREE" || drawnSet.has(card[i][i]))) bingoCount++;
     if ([0,1,2,3,4].every(i => card[i][4-i] === "FREE" || drawnSet.has(card[i][4-i]))) bingoCount++;
 
@@ -111,23 +109,22 @@
         Tesseract.recognize(canvas, 'eng', {
           logger: m => console.log(m)
         }).then(({ data: { text } }) => {
-          if (!text || text.trim() === "") {
-            status.textContent = "認識できる文字が見つかりませんでした。";
+          console.log("OCR raw text:", text);
+          const allNums = text.match(/\d+/g)?.map(n => parseInt(n, 10)) || [];
+
+          if (allNums.length < 24) {
+            status.textContent = `数字が ${allNums.length} 個しか見つかりません。25個必要です。`;
             return;
           }
 
-          status.textContent = "OCR完了。自動入力中...";
-          const lines = text.trim().split('\n').filter(line => line.trim() !== '');
+          status.textContent = "OCR完了。ビンゴマスに割り当てます。";
 
+          let i = 0;
           for (let r = 0; r < 5; r++) {
-            const nums = lines[r]?.match(/\d+/g);
-            if (!nums || nums.length < 5) continue;
             for (let c = 0; c < 5; c++) {
-              const id = `cell-${r}-${c}`;
-              if (!(r === 2 && c === 2)) {
-                const val = parseInt(nums[c], 10);
-                document.getElementById(id).value = isNaN(val) ? "" : val;
-              }
+              if (r === 2 && c === 2) continue; // FREEスキップ
+              const val = allNums[i++];
+              document.getElementById(`cell-${r}-${c}`).value = isNaN(val) ? "" : val;
             }
           }
         }).catch(err => {
