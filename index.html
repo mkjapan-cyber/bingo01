@@ -16,7 +16,7 @@
 </head>
 <body>
 
-<h2>ビンゴカードOCR（試作）</h2>
+<h2>ビンゴカードOCR（試作）2</h2>
 <input type="file" accept="image/*" onchange="loadAndProcessImage(this)" />
 <p id="status">画像未選択</p>
 
@@ -61,4 +61,71 @@
 
       const src = cv.imread(canvas);
       let gray = new cv.Mat();
-      cv.cvtColor(src, gray, cv
+      cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
+      cv.GaussianBlur(gray, gray, new cv.Size(5, 5), 0);
+      cv.adaptiveThreshold(gray, gray, 255, cv.ADAPTIVE_THRESH_MEAN_C, cv.THRESH_BINARY_INV, 11, 2);
+
+      let contours = new cv.MatVector();
+      let hierarchy = new cv.Mat();
+      cv.findContours(gray, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+
+      // マスらしき矩形を抽出
+      let rects = [];
+      for (let i = 0; i < contours.size(); i++) {
+        const cnt = contours.get(i);
+        const rect = cv.boundingRect(cnt);
+        if (rect.width > 30 && rect.height > 30 && rect.width < 300 && rect.height < 300) {
+          rects.push(rect);
+        }
+      }
+
+      if (rects.length < 24) {
+        document.getElementById("status").textContent = `検出されたマス数が少なすぎます（${rects.length}個）`;
+        return;
+      }
+
+      // 上から下、左から右に整列
+      rects.sort((a, b) => a.y - b.y || a.x - b.x);
+      const cellImages = rects.slice(0, 25); // 上位25マスのみ使用
+
+      document.getElementById("status").textContent = `25マス検出、OCR中...`;
+
+      const results = [];
+      for (let i = 0; i < cellImages.length; i++) {
+        const r = cellImages[i];
+        const roi = src.roi(r);
+        const tempCanvas = document.createElement("canvas");
+        tempCanvas.width = r.width;
+        tempCanvas.height = r.height;
+        cv.imshow(tempCanvas, roi);
+        roi.delete();
+
+        const { data: { text } } = await Tesseract.recognize(tempCanvas, 'eng', {
+          tessedit_char_whitelist: '0123456789'
+        });
+        const num = parseInt(text.match(/\d+/)?.[0] || -1);
+        results.push(isNaN(num) ? "" : num);
+      }
+
+      // 結果反映（中央はFREE）
+      let k = 0;
+      for (let i = 0; i < 5; i++) {
+        for (let j = 0; j < 5; j++) {
+          if (i === 2 && j === 2) continue;
+          const id = `cell-${i}-${j}`;
+          document.getElementById(id).value = results[k++];
+        }
+      }
+
+      src.delete(); gray.delete(); contours.delete(); hierarchy.delete();
+      document.getElementById("status").textContent = "完了";
+    };
+
+    const reader = new FileReader();
+    reader.onload = () => { img.src = reader.result; };
+    reader.readAsDataURL(file);
+  }
+</script>
+
+</body>
+</html>
